@@ -1,0 +1,246 @@
+# -------------------- Rprofile file with useful functions and settings ------
+
+# Settings ----------------------------------------------------------------
+
+# require("colorout")
+# if ("fortunes" %in% rownames(utils::installed.packages())) {
+# fortunes::fortune()
+# }
+
+# Set time zone to prevent odd warnings
+# https://stackoverflow.com/a/8047952/1655567
+options(tz = "Europe/London")
+Sys.setenv(TZ = "Europe/London")
+
+# Facilitate use of boost libraries in package development
+# http://gallery.rcpp.org/articles/boost-regular-expressions/
+Sys.setenv("PKG_LIBS" = "-lboost_regex")
+
+# Maximum print options
+options(max.print = 100)
+
+# Custom prompt
+options(prompt = ">> ")
+
+# Avoid strings as factors
+options(stringsAsFactors = FALSE)
+
+# Warn about partial matching
+# https://adv-r.hadley.nz/subsetting.html
+options(warnPartialMatchDollar = TRUE)
+options(warnPartialMatchArgs = TRUE)
+
+# Set cran mirror
+local({
+    r <- getOption("repos")
+    r["CRAN"] <- "https://cran.rstudio.com"
+    options(repos = r)
+})
+
+# Set editor to Vim
+options(editor = "vim")
+
+# Package options ---------------------------------------------------------
+
+# Devtools
+options(devtools.desc.author = '"Konrad Zdeb <konrad.zdeb@me.com> [aut,cre]"',
+        devtools.desc.license = "MIT")
+
+# Blogdown
+options(blogdown.ext = ".Rmd", blogdown.author = "Konrad Zdeb")
+
+# usethis
+options(usethis.full_name = "Konrad Zdeb")
+
+
+# RStudio themes ----------------------------------------------------------
+
+if (interactive() && requireNamespace("rsthemes", quietly = TRUE)) {
+    # Set preferred themes if not handled elsewhere..
+    rsthemes::set_theme_light("Chrome")   # light theme
+    rsthemes::set_theme_dark("Night Owl") # dark theme
+
+    # Whenever the R session restarts inside RStudio...
+    setHook("rstudio.sessionInit", function(isNewSession) {
+        # Automatically choose the correct theme based on time of day
+        rsthemes::use_theme_auto()
+    }, action = "append")
+}
+
+
+
+# First and Last -----------------------------------------------------------
+
+.First <- function() {
+    if (interactive()) {
+        cat(
+            "\nProcessed RProfile at:",
+            date(),
+            "\n",
+            "Available libraries",
+            "\n",
+            paste(.libPaths(), collapse = "\n "),
+            "\n"
+        )
+    }
+}
+
+# .Last() run at the end of the session
+.Last <- function() {
+    # Save session information at the exit
+    if (interactive()) {
+        # check to see if we're in an RStudio project (requires the rstudioapi package)
+        if (!rstudioapi::isAvailable()) {
+            return(NULL)
+        } else {
+            pth <- rstudioapi::getActiveProject()
+            if (is.null(pth)) {
+                return(NULL)
+            }
+
+            # append date + sessionInfo to a file called sessionInfoLog
+            cat("Recording session info into the project's sesionInfoLog file...")
+            info <-  capture.output(sessionInfo())
+            info <-
+                paste(
+                    "\n----------------------------------------------",
+                    paste0('Session Info for ', Sys.time()),
+                    paste(info, collapse = "\n"),
+                    sep  = "\n"
+                )
+            f <- file.path(pth, "sessionInfoLog")
+            cat(info, file = f, append = TRUE)
+        }
+    }
+}
+
+# Functions ----------------------------------------------------------------
+
+## Create a new invisible environment for all the functions to go in so it doesn't clutter your workspace.
+.env <- new.env()
+
+## head tail
+.env$ht = function(d, n = 6)
+    rbind(head(d, n), tail(d, n))
+
+# Object size in MBS
+.env$size <- function(x) {
+    format(object.size(x), units = "Mb")
+}
+
+## Returns a logical vector TRUE for elements of X not in Y
+.env$"%nin%" <- function(x, y)
+    ! (x %in% y)
+
+## Returns names(df) in single column, numbered matrix format.
+.env$n <- function(df)
+    matrix(names(df))
+
+## Single character shortcuts for summary() and head().
+.env$s <- base::summary
+.env$h <- utils::head
+
+## ht==headtail, i.e., show the first and last 10 items of an object
+.env$ht <- function(d)
+    rbind(head(d, 10), tail(d, 10))
+
+## Show the first 5 rows and first 5 columns of a data frame or matrix
+.env$hh <-
+    function(d)
+        if (class(d) == "matrix" | class(d) == "data.frame")
+            d[1:5, 1:5]
+
+## Read data on clipboard.
+.env$read.cb <- function(...) {
+    ismac <- Sys.info()[1] == "Darwin"
+    if (!ismac)
+        read.table(file = "clipboard", ...)
+    else
+        read.table(pipe("pbpaste"), ...)
+}
+
+## Strip row names from a data frame (stolen from plyr)
+.env$unrowname <- function(x) {
+    rownames(x) <- NULL
+    x
+}
+
+## List objects and classes (from @_inundata, mod by ateucher)
+.env$lsa <- function() {
+    obj_type <-
+        function(x)
+            class(get(x, envir = .GlobalEnv)) # define environment
+    foo = data.frame(sapply(ls(envir = .GlobalEnv), obj_type))
+    foo$object_name = rownames(foo)
+    names(foo)[1] = "class"
+    names(foo)[2] = "object"
+    return(unrowname(foo))
+}
+
+## List all functions in a package (also from @_inundata)
+.env$lsp <- function(package, all.names = FALSE, pattern) {
+    package <- deparse(substitute(package))
+    ls(
+        pos = paste("package", package, sep = ":"),
+        all.names = all.names,
+        pattern = pattern
+    )
+}
+
+## Open Finder to the current directory on mac
+.env$macopen <-
+    function(...)
+        if (Sys.info()[1] == "Darwin")
+            system("open .")
+.env$o       <-
+    function(...)
+        if (Sys.info()[1] == "Darwin")
+            system("open .")
+
+## Concatenate strings
+.env$"%s%`" <- function(x, y) {
+    paste(x, y)
+}
+.env$"%s0%" <- function(x, y) {
+    paste0(x, y)
+}
+
+## Current date as file name
+.env$current_date_name <- function(x, extension = "PNG") {
+    paste(gsub(
+        pattern = "\\.",
+        replacement = "-",
+        x = paste(
+            make.names(x),
+            gsub(
+                pattern = "x",
+                replacement = "",
+                ignore.case = TRUE,
+                x = make.names(Sys.time())
+            ),
+            sep = "_"
+        )
+    ),
+    extension,
+    sep = ".")
+}
+
+## Show hidden function
+.env$showFunctions <- function() {
+    print(ls(envir = .env))
+}
+
+## Get object size
+.env$objSize <- function(x) {
+    print(format(x = object.size(x), unit = "auto"))
+}
+
+## Rename
+.env$rename <- function(oldName, newName) {
+    newName <- oldName
+    rm(oldName, envir = parent.env())
+    return(newName)
+}
+
+## Attach all the variables above
+attach(.env)
